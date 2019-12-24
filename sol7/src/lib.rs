@@ -4,7 +4,7 @@ use std::cell::RefCell;
 
 const NUM_AMPS: usize = 5;
 
-fn get_signal_for_inputs(program_str: &str, inputs: &[i32; 5]) -> i32 {
+fn get_signal_for_inputs(program_str: &str, inputs: &[i128; 5]) -> i128 {
     let programs: Vec<RefCell<Program>> = (0..NUM_AMPS)
         .map(|i| RefCell::new(Program::new(program_str, &vec![inputs[i]])))
         .collect();
@@ -38,10 +38,10 @@ fn get_signal_for_inputs(program_str: &str, inputs: &[i32; 5]) -> i32 {
     }
 }
 
-pub fn get_signal(program_str: &str) -> i32 {
+pub fn get_signal(program_str: &str) -> i128 {
     let mut inputs = [0; NUM_AMPS];
     for i in 0..NUM_AMPS {
-        inputs[i] = (i + 5) as i32
+        inputs[i] = (i + 5) as i128
     }
     let permutations = Heap::new(&mut inputs);
     permutations

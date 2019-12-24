@@ -1,15 +1,18 @@
 use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
+use std::env;
 
-const ADD: i32 = 1;
-const MULTIPLY: i32 = 2;
-const INPUT: i32 = 3;
-const OUTPUT: i32 = 4;
-const JIT: i32 = 5;
-const JIF: i32 = 6;
-const LESS: i32 = 7;
-const EQUALS: i32 = 8;
-const STOP: i32 = 99;
-//
+const ADD: i128 = 1;
+const MULTIPLY: i128 = 2;
+const INPUT: i128 = 3;
+const OUTPUT: i128 = 4;
+const JIT: i128 = 5;
+const JIF: i128 = 6;
+const LESS: i128 = 7;
+const EQUALS: i128 = 8;
+const REL: i128 = 9;
+const STOP: i128 = 99;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 enum Command {
     ADD,
@@ -20,22 +23,25 @@ enum Command {
     JIF,
     LESS,
     EQUALS,
+    REL,
     STOP,
 }
 
 const POSITION: u32 = 0;
 const IMMEDIATE: u32 = 1;
+const RELATIVE: u32 = 2;
 
 const LEN_COMMAND: usize = 2;
 const OPER_NUM_PARAMS: usize = 3;
 const IO_NUM_PARAMS: usize = 1;
-const OUTPUT_NUM_PARAMS: usize = 1;
 const JUMP_NUM_PARAMS: usize = 2;
 const CMP_NUM_PARAMS: usize = 3;
+const REL_NUM_PARAMS: usize = 1;
 
-const WRITE_CMDS: [Command; 4] = [
+const WRITE_CMDS: [Command; 5] = [
     Command::ADD,
     Command::MULTIPLY,
+    Command::INPUT,
     Command::LESS,
     Command::EQUALS,
 ];
@@ -46,29 +52,27 @@ struct Opcode {
     modes: Vec<u32>,
 }
 impl Opcode {
-    pub fn new(opcode: i32) -> Self {
+    pub fn new(opcode: i128) -> Self {
         let (command, modes) = match opcode % 100 {
             ADD => (Command::ADD, Opcode::get_modes(opcode, OPER_NUM_PARAMS)),
             MULTIPLY => (
                 Command::MULTIPLY,
                 Opcode::get_modes(opcode, OPER_NUM_PARAMS),
             ),
-            INPUT => (Command::INPUT, vec![]),
-            OUTPUT => (
-                Command::OUTPUT,
-                Opcode::get_modes(opcode, OUTPUT_NUM_PARAMS),
-            ),
+            INPUT => (Command::INPUT, Opcode::get_modes(opcode, IO_NUM_PARAMS)),
+            OUTPUT => (Command::OUTPUT, Opcode::get_modes(opcode, IO_NUM_PARAMS)),
             JIT => (Command::JIT, Opcode::get_modes(opcode, JUMP_NUM_PARAMS)),
             JIF => (Command::JIF, Opcode::get_modes(opcode, JUMP_NUM_PARAMS)),
             LESS => (Command::LESS, Opcode::get_modes(opcode, CMP_NUM_PARAMS)),
             EQUALS => (Command::EQUALS, Opcode::get_modes(opcode, CMP_NUM_PARAMS)),
+            REL => (Command::REL, Opcode::get_modes(opcode, REL_NUM_PARAMS)),
             STOP => (Command::STOP, vec![]),
             _ => panic!("Invalid opcode: {}", opcode),
         };
         Opcode { command, modes }
     }
 
-    fn get_modes(opcode: i32, num_params: usize) -> Vec<u32> {
+    fn get_modes(opcode: i128, num_params: usize) -> Vec<u32> {
         let mut digits: Vec<u32> = opcode
             .to_string()
             .chars()
@@ -80,80 +84,151 @@ impl Opcode {
         }
         digits[LEN_COMMAND..].to_vec()
     }
+
+    fn to_command_str(&self, params: &Vec<i128>) -> String {
+        match self.command {
+            Command::ADD => format!("Storing {} to address {}", params[0] + params[1], params[2]),
+            Command::MULTIPLY => {
+                format!("Storing {} to address {}", params[0] * params[1], params[2])
+            }
+            Command::INPUT => format!("Storing input to address {}", params[0]),
+            Command::OUTPUT => format!("Outputting {}", params[0]),
+            Command::JIT => {
+                if params[0] != 0 {
+                    format!("Jumping to instruction at address {}", params[1])
+                } else {
+                    format!("Not jumping")
+                }
+            }
+            Command::JIF => {
+                if params[0] == 0 {
+                    format!("Jumping to instruction at address {}", params[1])
+                } else {
+                    format!("Not jumping")
+                }
+            }
+            Command::LESS => {
+                if params[0] < params[1] {
+                    format!("Storing 1 to address {}", params[2])
+                } else {
+                    format!("Storing 0 to address {}", params[2])
+                }
+            }
+            Command::EQUALS => {
+                if params[0] == params[1] {
+                    format!("Storing 1 to address {}", params[2])
+                } else {
+                    format!("Storing 0 to address {}", params[2])
+                }
+            }
+            Command::REL => format!("Increasing relative base by {}", params[0]),
+            Command::STOP => format!("Stopping"),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Program {
-    memory: RefCell<Vec<i32>>,
+    memory: RefCell<HashMap<usize, i128>>,
     ip: usize,
-    inputs: RefCell<Vec<i32>>,
+    inputs: RefCell<Vec<i128>>,
     input_index: usize,
+    relative_base: usize,
+    debug: bool,
 }
 impl Program {
-    pub fn new(program_string: &str, inputs: &Vec<i32>) -> Self {
-        let memory: Vec<i32> = program_string
+    pub fn new(program_string: &str, inputs: &Vec<i128>) -> Self {
+        let memory = program_string
             .split(",")
-            .map(|val| val.parse().unwrap())
-            .collect();
+            .enumerate()
+            .map(|(i, val)| (i, val.parse().unwrap()))
+            .collect::<HashMap<usize, i128>>();
         Program {
             memory: RefCell::new(memory),
             ip: 0,
             inputs: RefCell::new(inputs.clone()),
             input_index: 0,
+            relative_base: 0,
+            debug: env::var_os("DEBUG").is_some(),
         }
     }
 
-    pub fn memory(&self) -> Ref<Vec<i32>> {
+    pub fn memory(&self) -> Ref<HashMap<usize, i128>> {
         self.memory.borrow()
     }
 
-    fn val_at(&self, index: usize) -> i32 {
-        self.memory()[index as usize]
+    fn val_at(&self, index: usize) -> i128 {
+        match self.memory().get(&index) {
+            Some(&val) => val,
+            None => 0,
+        }
     }
 
-    fn set(&self, index: usize, val: i32) {
-        self.memory.borrow_mut()[index] = val;
+    fn set(&self, index: usize, val: i128) {
+        self.memory.borrow_mut().insert(index, val);
     }
 
-    pub fn send_input(&mut self, input: i32) {
+    pub fn send_input(&mut self, input: i128) {
         self.inputs.borrow_mut().push(input);
     }
 
-    fn get_params(&self, opcode: &Opcode) -> Vec<i32> {
+    fn get_params(&self, opcode: &Opcode) -> Vec<i128> {
         opcode
             .modes
             .iter()
             .enumerate()
             .map(|(offset, &mode)| {
-                if offset == opcode.modes.len() - 1 && WRITE_CMDS.contains(&(opcode.command)) {
-                    return self.val_at(self.ip + offset + 1);
-                }
+                let is_write =
+                    offset == opcode.modes.len() - 1 && WRITE_CMDS.contains(&(opcode.command));
                 match mode {
-                    POSITION => self.val_at(self.val_at(self.ip + offset + 1) as usize),
+                    POSITION => {
+                        if is_write {
+                            self.val_at(self.ip + offset + 1)
+                        } else {
+                            self.val_at(self.val_at(self.ip + offset + 1) as usize)
+                        }
+                    }
                     IMMEDIATE => self.val_at(self.ip + offset + 1),
+                    RELATIVE => {
+                        if is_write {
+                            self.val_at(self.ip + offset + 1) + self.relative_base as i128
+                        } else {
+                            self.val_at(
+                                (self.val_at(self.ip + offset + 1) + self.relative_base as i128)
+                                    as usize,
+                            )
+                        }
+                    }
                     _ => panic!("Invalid modes for opcode: {:?}", opcode),
                 }
             })
             .collect()
     }
 
-    pub fn run(&mut self) -> Option<i32> {
-        let mut last_output = None;
+    pub fn run(&mut self) -> Vec<i128> {
+        let mut outputs = vec![];
         loop {
             let (exit, output) = self.execute();
             if exit {
                 break;
             }
             if output.is_some() {
-                last_output = output;
+                outputs.push(output.unwrap());
             }
         }
-        last_output
+        outputs
     }
 
-    pub fn execute(&mut self) -> (bool, Option<i32>) {
+    pub fn execute(&mut self) -> (bool, Option<i128>) {
         let opcode = Opcode::new(self.val_at(self.ip));
         let params = self.get_params(&opcode);
+        if self.debug {
+            println!(
+                "{}: Running command {:?} with params {:?}",
+                self.ip, opcode.command, params
+            );
+            println!("\t{}", opcode.to_command_str(&params));
+        }
         match opcode.command {
             Command::ADD => {
                 self.set(params[2] as usize, params[0] + params[1]);
@@ -166,10 +241,7 @@ impl Program {
                 (false, None)
             }
             Command::INPUT => {
-                self.set(
-                    self.val_at(self.ip + IO_NUM_PARAMS) as usize,
-                    self.inputs.borrow()[self.input_index],
-                );
+                self.set(params[0] as usize, self.inputs.borrow()[self.input_index]);
                 self.input_index += 1;
                 self.ip += IO_NUM_PARAMS + 1;
                 (false, None)
@@ -212,13 +284,21 @@ impl Program {
                 self.ip += CMP_NUM_PARAMS + 1;
                 (false, None)
             }
+            Command::REL => {
+                self.relative_base = (self.relative_base as i128 + params[0]) as usize;
+                if self.debug {
+                    println!("\tRel base set to {}", self.relative_base);
+                }
+                self.ip += REL_NUM_PARAMS + 1;
+                (false, None)
+            }
             Command::STOP => (true, None),
         }
     }
 }
 
-pub fn process_program(program_string: &str, inputs: &Vec<i32>) -> (Program, Option<i32>) {
+pub fn process_program(program_string: &str, inputs: &Vec<i128>) -> (Program, Vec<i128>) {
     let mut program = Program::new(program_string, inputs);
-    let output = program.run();
-    (program, output)
+    let outputs = program.run();
+    (program, outputs)
 }
