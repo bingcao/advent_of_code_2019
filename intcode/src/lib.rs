@@ -172,6 +172,10 @@ impl Program {
         self.inputs.borrow_mut().push(input);
     }
 
+    fn next_opcode(&self) -> Opcode {
+        Opcode::new(self.val_at(self.ip))
+    }
+
     fn get_params(&self, opcode: &Opcode) -> Vec<i128> {
         opcode
             .modes
@@ -205,6 +209,28 @@ impl Program {
             .collect()
     }
 
+    pub fn run_until_blocked_or_done(&mut self) -> (Vec<i128>, bool) {
+        let mut outputs = vec![];
+        let mut done = false;
+        loop {
+            if self.next_opcode().command == Command::INPUT
+                && self.input_index >= self.inputs.borrow().len()
+            {
+                break;
+            }
+
+            let (exit, output) = self.execute();
+            if exit {
+                done = true;
+                break;
+            }
+            if output.is_some() {
+                outputs.push(output.unwrap());
+            }
+        }
+        (outputs, done)
+    }
+
     pub fn run(&mut self) -> Vec<i128> {
         let mut outputs = vec![];
         loop {
@@ -220,7 +246,7 @@ impl Program {
     }
 
     pub fn execute(&mut self) -> (bool, Option<i128>) {
-        let opcode = Opcode::new(self.val_at(self.ip));
+        let opcode = self.next_opcode();
         let params = self.get_params(&opcode);
         if self.debug {
             println!(
