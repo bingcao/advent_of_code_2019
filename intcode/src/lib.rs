@@ -127,7 +127,7 @@ impl Opcode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
     memory: RefCell<HashMap<usize, i128>>,
     ip: usize,
