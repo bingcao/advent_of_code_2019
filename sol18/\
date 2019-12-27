@@ -1,0 +1,126 @@
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+
+use paths::{index_to_point, Direction, Point};
+
+enum Tile {
+    Open,
+    Wall,
+    Key(char),
+    Door(char),
+}
+impl fmt::Display for Tile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Tile::*;
+
+        let s = match self {
+            Open => '.',
+            Wall => '#',
+            Key(k) => *k,
+            Door(d) => *d,
+        };
+        write!(f, "{}", s.to_string())
+    }
+}
+impl<'a> Tile {
+    fn from_char(c: char) -> Self {
+        use Tile::*;
+        if c == '.' {
+            Open
+        } else if c == '#' {
+            Wall
+        } else if c.is_ascii_lowercase() {
+            Key(c)
+        } else if c.is_ascii_uppercase() {
+            Door(c)
+        } else {
+            panic!("Invalid char {}", c.to_string());
+        }
+    }
+}
+
+fn parse_map(map_str: &str) -> Vec<Vec<Tile>> {
+    let mut rows = vec![];
+    let mut row = vec![];
+    for c in map_str.chars() {
+        if c == '\n' {
+            rows.push(row);
+            row = vec![];
+        } else if c == '@' {
+            row.push(Tile::Open);
+        } else {
+            row.push(Tile::from_char(c));
+        }
+    }
+    rows
+}
+
+pub fn get_keys(map_str: &str) {
+    let map = parse_map(map_str);
+    let start_index = map_str
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '@')
+        .nth(0)
+        .unwrap()
+        .0;
+    let point = index_to_point(start_index, map[0].len());
+
+    let seen: HashMap<Point<usize>, HashSet<Vec<char>>> = HashMap::new();
+    for x in 0..map[0].len() {
+        for y in 0..map.len() {
+            let point = Point::new(x, y);
+            let set = HashSet::new();
+            set.insert(vec![]);
+            seen.insert(point, set);
+        }
+    }
+    let mut horizon = vec![(point, vec![])];
+    loop {
+        let mut new_horizon = vec![];
+
+        for (point, keys) in horizon.iter() {
+            for dir in Direction::iter() {
+                // println!("{}", self);
+                let new_point = self.position = position;
+                let next_position = self.get_output_position(&direction);
+                if self.visited.contains(&next_position)
+                    || self.get_tile_at(next_position) != Tile::UNVISITED
+                {
+                    continue;
+                }
+                let mut program = self.program_states.get(&position).unwrap().clone();
+                let input = match direction {
+                    Direction::NORTH => 1,
+                    Direction::WEST => 3,
+                    Direction::SOUTH => 2,
+                    Direction::EAST => 4,
+                };
+                program.send_input(input);
+
+                let (outputs, done) = program.run_until_blocked_or_done();
+                if done {
+                    panic!("Hit unexpected halt");
+                }
+                assert_eq!(outputs.len(), 1, "Invalid outputs: {:?}", outputs);
+                let output = outputs[0];
+                if output == 0 {
+                    self.map.insert(next_position, Tile::WALL);
+                } else if output == 1 {
+                    self.map.insert(next_position, Tile::VISITED);
+                    new_horizon.push(next_position);
+                    self.program_states.insert(next_position, program.clone());
+                    self.add_path(position, next_position);
+                } else if output == 2 {
+                    self.map.insert(next_position, Tile::DEST);
+                    new_horizon.push(next_position);
+                    self.program_states.insert(next_position, program.clone());
+                    self.add_path(position, next_position);
+                } else {
+                    panic!("Invalid output: {}", output);
+                }
+            }
+        }
+        horizon = new_horizon;
+    }
+}

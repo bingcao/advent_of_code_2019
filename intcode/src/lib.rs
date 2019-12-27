@@ -164,7 +164,7 @@ impl Program {
         }
     }
 
-    fn set(&self, index: usize, val: i128) {
+    pub fn set(&self, index: usize, val: i128) {
         self.memory.borrow_mut().insert(index, val);
     }
 
@@ -267,6 +267,12 @@ impl Program {
                 (false, None)
             }
             Command::INPUT => {
+                if self.input_index >= self.inputs.borrow().len() {
+                    panic!("Need an input but could not find one");
+                }
+                if self.debug {
+                    println!("\tInput is {}", self.inputs.borrow()[self.input_index]);
+                }
                 self.set(params[0] as usize, self.inputs.borrow()[self.input_index]);
                 self.input_index += 1;
                 self.ip += IO_NUM_PARAMS + 1;

@@ -5,10 +5,15 @@ use std::slice::Iter;
 
 use num::Integer;
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Point<T: Integer + Add<Output = T> + Copy> {
-    x: T,
-    y: T,
+    pub x: T,
+    pub y: T,
+}
+impl<T: Integer + fmt::Display + Copy> fmt::Debug for Point<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
+    }
 }
 impl<T: Integer + fmt::Display + Copy> fmt::Display for Point<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -28,6 +33,22 @@ impl<T: Integer + Copy> Point<T> {
             Direction::WEST => Point::new(self.x - T::one(), self.y),
         }
     }
+
+    pub fn move_in_dir_y_rev(&self, dir: &Direction) -> Point<T> {
+        match dir {
+            Direction::NORTH => Point::new(self.x, self.y - T::one()),
+            Direction::SOUTH => Point::new(self.x, self.y + T::one()),
+            Direction::EAST => Point::new(self.x + T::one(), self.y),
+            Direction::WEST => Point::new(self.x - T::one(), self.y),
+        }
+    }
+}
+
+pub fn index_to_point<T: Integer + Copy>(index: T, width: T) -> Point<T> {
+    // Index = width * y + x
+    let x = index % width;
+    let y = (index - x) / width;
+    Point::new(x, y)
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -51,8 +72,24 @@ impl Direction {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    use super::*;
+
+    mod test_index_to_point {
+        use super::*;
+
+        #[test]
+        fn test_1() {
+            assert_eq!(index_to_point(3, 5), Point::new(3, 0));
+        }
+
+        #[test]
+        fn test_2() {
+            assert_eq!(index_to_point(5, 5), Point::new(0, 1));
+        }
+
+        #[test]
+        fn test_3() {
+            assert_eq!(index_to_point(12, 5), Point::new(2, 2));
+        }
     }
 }
