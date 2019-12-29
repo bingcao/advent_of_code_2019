@@ -1,6 +1,7 @@
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::env;
+use std::io;
 
 const ADD: i128 = 1;
 const MULTIPLY: i128 = 2;
@@ -209,12 +210,19 @@ impl Program {
             .collect()
     }
 
+    pub fn num_inputs(&self) -> usize {
+        self.inputs.borrow().len() - self.input_index
+    }
+
+    pub fn needs_input(&self) -> bool {
+         self.next_opcode().command == Command::INPUT
+    }
+
     pub fn run_until_blocked_or_done(&mut self) -> (Vec<i128>, bool) {
         let mut outputs = vec![];
         let mut done = false;
         loop {
-            if self.next_opcode().command == Command::INPUT
-                && self.input_index >= self.inputs.borrow().len()
+            if self.needs_input() && self.num_inputs() == 0
             {
                 break;
             }
@@ -333,4 +341,54 @@ pub fn process_program(program_string: &str, inputs: &Vec<i128>) -> (Program, Ve
     let mut program = Program::new(program_string, inputs);
     let outputs = program.run();
     (program, outputs)
+}
+
+pub struct Computer {
+    program: Program,
+    saved_program_str: String,
+    pub saved_output: Option<i128>,
+}
+impl Computer {
+    pub fn new(program_str: &str) -> Self {
+        Computer {
+            program: Program::new(program_str, &vec![]),
+            saved_program_str: String::from(program_str),
+            saved_output: None
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.program = Program::new(&self.saved_program_str[..], &vec![]);
+    }
+
+    pub fn send_ascii(&mut self, ascii: &str) {
+        ascii.chars().for_each(|c| self.program.send_input(c as i128))
+    }
+
+    pub fn run_until_blocked_or_done(&mut self) -> (String, bool) {
+        let (mut outputs, done) = self.program.run_until_blocked_or_done();
+        let num_outputs = outputs.len();
+        if outputs.len() > 0 && outputs[outputs.len() - 1] > u8::max_value() as i128 {
+            self.saved_output = Some(outputs[num_outputs - 1]);
+            outputs = outputs.into_iter().take(num_outputs - 1).collect();
+        }
+        let output_str = outputs.into_iter().map(|i| i as u8 as char).collect::<String>();
+        print!("{}", output_str);
+        (output_str, done)
+    }
+
+    pub fn run_interactive(&mut self) {
+        loop {
+            let (display_str, done) = self.run_until_blocked_or_done();
+            if let Some(val) = self.saved_output {
+                println!("Output is {}", val)
+            }
+            if done {
+                break;
+            }
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap();
+            self.send_ascii(&input[..]);
+        }
+    }
 }
